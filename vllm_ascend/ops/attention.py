@@ -15,7 +15,7 @@ except ImportError:
     raise ImportError(
         "torch_npu is required for Ascend NPU attention operations. "
         "Please install the appropriate torch_npu package for your "
-        "CANN version (recommended: CANN 7.0 or later)."
+        "CANN version (recommended: CANN 8.0 or later)."
     )
 
 
@@ -85,9 +85,6 @@ def _paged_attention_fallback(
     """Fallback paged attention implementation using standard PyTorch ops.
 
     This is used when the NPU-native paged attention kernel is not available.
-    Performance is suboptimal compared to the native kernel.
-
-    Note: I added a large-negative mask value of -1e4 instead of -inf to avoid
-    NaN issues observed on certain NPU firmware versions during softmax.
-    See: https://github.com/vllm-project/vllm-ascend/issues/XXXX
+    Performance is suboptimal compared to the native kernel; prefer upgrading
+    torch_npu to a version that supports npu_paged_attention.
     """
