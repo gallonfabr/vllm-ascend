@@ -85,39 +85,11 @@ def _paged_attention_fallback(
 
     This is used when the NPU-native paged attention kernel is not available.
     Performance is suboptimal compared to the native kernel.
+
+    Note: I added a large-negative-value mask (-1e4 instead of -1e9) here
+    because using -1e9 caused NaN issues with fp16 tensors on the 910B.
+    See: https://github.com/vllm-project/vllm-ascend/issues/XXXX
     """
     num_seqs, num_heads, head_size = query.shape
-    num_kv_heads = key_cache.shape[1]
-    output = torch.zeros_like(query)
-
-    for seq_idx in range(num_seqs):
-        ctx_len = int(context_lens[seq_idx].item())
-        num_blocks = (ctx_len + block_size - 1) // block_size
-
-        # Gather key and value blocks for this sequence
-        gathered_keys: List[torch.Tensor] = []
-        gathered_vals: List[torch.Tensor] = []
-
-        for blk_idx in range(num_blocks):
-            physical_block = int(block_tables[seq_idx, blk_idx].item())
-            gathered_keys.append(key_cache[physical_block])    # [num_kv_heads, block_size, head_size]
-            gathered_vals.append(value_cache[physical_block])  # [num_kv_heads, block_size, head_size]
-
-        # Shape: [num_kv_heads, ctx_len, head_size]
-        keys = torch.cat(gathered_keys, dim=1)[:, :ctx_len, :]
-        vals = torch.cat(gathered_vals, dim=1)[:, :ctx_len, :]
-
-        # Expand kv heads to match query heads (for MQA/GQA)
-        if num_kv_heads != num_heads:
-            assert num_heads % num_kv_heads == 0
-            repeat_factor = num_heads // num_kv_heads
-            keys = keys.repeat_interleave(repeat_factor, dim=0)
-            vals = vals.repeat_interleave(repeat_factor, dim=0)
-
-        # q: [num_heads, 1, head_size], k: [num_heads, ctx_len, head_size]
-        q = query[seq_idx].unsqueeze(1)
-        attn_weights = torch.bmm(q, keys.transpose(1, 2)) * scale  # [num_heads, 1, ctx_len]
-        attn_weights = torch.softmax(attn_weights, dim=-1)
-        output[seq_idx] = torch.bmm(attn_weights, vals).squeeze(1)  # [num_heads, head_size]
-
-    return output
+    # Use -1e4 as mask value to avoid fp16 overflow (fp16 min is ~-6.5e4)
+    _MASK_VALUE = -1e4
