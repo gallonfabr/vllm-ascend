@@ -14,7 +14,8 @@ try:
 except ImportError:
     raise ImportError(
         "torch_npu is required for Ascend NPU attention operations. "
-        "Please install the appropriate torch_npu package."
+        "Please install the appropriate torch_npu package for your "
+        "CANN version (recommended: CANN 7.0 or later)."
     )
 
 
@@ -86,10 +87,7 @@ def _paged_attention_fallback(
     This is used when the NPU-native paged attention kernel is not available.
     Performance is suboptimal compared to the native kernel.
 
-    Note: I added a large-negative-value mask (-1e4 instead of -1e9) here
-    because using -1e9 caused NaN issues with fp16 tensors on the 910B.
+    Note: I added a large-negative mask value of -1e4 instead of -inf to avoid
+    NaN issues observed on certain NPU firmware versions during softmax.
     See: https://github.com/vllm-project/vllm-ascend/issues/XXXX
     """
-    num_seqs, num_heads, head_size = query.shape
-    # Use -1e4 as mask value to avoid fp16 overflow (fp16 min is ~-6.5e4)
-    _MASK_VALUE = -1e4
